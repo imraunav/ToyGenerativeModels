@@ -284,7 +284,7 @@ if __name__ == "__main__":
     m = UNetDiffusion(
         3,
         3,
-        emb_dim=512,
+        emb_dim=128,
         timesteps=1000,
         depth=4,
         model_ch=32,
@@ -292,14 +292,14 @@ if __name__ == "__main__":
         attn_res=[4],
         num_attn_heads=4,
     )
-    m.to(torch.bfloat16)
+    torch.compile(m)
     t = torch.randint(0, 1000, (4,))
     num_par = 0
     for p in m.parameters():
         num_par += p.numel()
-    print(f"No. parameters: {num_par/1_000_000:.3f}M")  # 12.691M
-    x = torch.randn((4, 3, 64, 64), dtype=torch.bfloat16)
-    with torch.no_grad():
+    print(f"No. parameters: {num_par/1_000_000:.3f}M")  # 8.826M
+    x = torch.randn((4, 3, 64, 64))
+    with torch.autocast("cpu", dtype=torch.bfloat16):
         y = m(x, t)
     print(y.shape)  # torch.Size([4, 3, 64, 64])
 
