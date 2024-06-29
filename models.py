@@ -16,7 +16,7 @@ def efficientconv(in_ch, out_ch, kernel_size, stride=1, padding=0, bias=True):
     if kernel_size == 1:
         return nn.Conv2d(in_ch, out_ch, kernel_size, stride, padding, bias=bias)
     else:
-        return TimestepEmbedSequential(
+        return nn.Sequential(
             nn.Conv2d(
                 in_ch,
                 in_ch,
@@ -45,9 +45,11 @@ class TimestepEmbedSequential(nn.Sequential):
     support it as an extra input.
     """
 
-    def forward(self, x, emb=None):
+    def forward(self, x, emb):
         for layer in self:
-            if isinstance(layer, ResBlock):
+            if isinstance(layer, ResBlock) or isinstance(
+                layer, TimestepEmbedSequential
+            ):
                 x = layer(x, emb)
             else:
                 x = layer(x)
@@ -59,7 +61,7 @@ class ResBlock(nn.Module):
         self,
         in_ch,
         out_ch,
-        emb_dim=None,
+        emb_dim,
         num_groups=8,
         model_ch=None,
     ):
@@ -84,12 +86,11 @@ class ResBlock(nn.Module):
             efficientconv(model_ch, out_ch, 3, 1, 1),
         )
 
-        if emb_dim is not None:
-            self.mlp = nn.Sequential(
-                nn.GroupNorm(num_groups, emb_dim),
-                nn.SiLU(),
-                nn.Linear(emb_dim, model_ch),
-            )
+        self.mlp = nn.Sequential(
+            nn.GroupNorm(num_groups, emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, model_ch),
+        )
 
         if in_ch == out_ch:
             self.residual = nn.Identity()
@@ -98,11 +99,10 @@ class ResBlock(nn.Module):
 
     def forward(self, x, emb=None):
         h = self.conv1(x)
-        if emb is not None:
-            emb = self.mlp(emb)
-            while len(h.shape) > len(emb.shape):
-                emb = emb[..., None]
-            h = h + emb
+        emb = self.mlp(emb)
+        while len(h.shape) > len(emb.shape):
+            emb = emb[..., None]
+        h = h + emb
         h = self.conv2(h)
 
         return h + self.residual(x)
@@ -178,7 +178,7 @@ class UNetDiffusion(nn.Module):
 
         ds = 1  # downsampling tracking
         if emb_dim is not None:
-            self.mlp = TimestepEmbedSequential(
+            self.mlp = nn.Sequential(
                 nn.Linear(emb_dim, 4 * emb_dim),
                 nn.SiLU(),
                 nn.Linear(4 * emb_dim, emb_dim),
@@ -208,7 +208,7 @@ class UNetDiffusion(nn.Module):
 
             ds *= 2
             self.down_samplers.append(
-                TimestepEmbedSequential(
+                nn.Sequential(
                     efficientconv(model_ch, model_ch // 4, 1),
                     nn.PixelUnshuffle(2),
                 )
@@ -217,14 +217,19 @@ class UNetDiffusion(nn.Module):
         # bottleneck
         _resblocks = []
         for _ in range(num_resblock):
-            _resblocks.append(ResBlock(model_ch, model_ch, emb_dim))
+            _this_block = []
+            _this_block.append(ResBlock(model_ch, model_ch, emb_dim))
+            if ds in attn_res:
+                _this_block.append(SelfAttention(model_ch, num_attn_heads))
+            _this_block.append(ResBlock(model_ch, model_ch, emb_dim))
+            _resblocks.append(TimestepEmbedSequential(*_this_block))
         self.bottleneck = TimestepEmbedSequential(*_resblocks)
 
         # decoder definition
         for _ in range(depth):
             ds //= 2
             self.up_samplers.append(
-                TimestepEmbedSequential(
+                nn.Sequential(
                     efficientconv(model_ch, model_ch * 4, 1),
                     nn.PixelShuffle(2),
                 )
@@ -297,7 +302,7 @@ if __name__ == "__main__":
     num_par = 0
     for p in m.parameters():
         num_par += p.numel()
-    print(f"No. parameters: {num_par/1_000_000:.3f}M")  # 8.826M
+    print(f"No. parameters: {num_par/1_000_000:.3f}M")  # 10.029M
     x = torch.randn((4, 3, 64, 64))
     with torch.autocast("cpu", dtype=torch.bfloat16):
         y = m(x, t)
