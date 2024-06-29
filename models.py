@@ -135,7 +135,7 @@ class SelfAttention(nn.Module):
         )  # (N, T, C)
 
         q, k, v = torch.split(qkv, C, dim=2)
-        h = F.scaled_dot_product_attention(q, k, v)
+        h = F.scaled_dot_product_attention(q, k, v)  # flash attention
         h = rearrange(
             h,
             "(n head) (h w) c -> n (head c) h w",
