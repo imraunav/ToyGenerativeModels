@@ -35,7 +35,7 @@ class SimpleDataset(Dataset):
         if self.transforms is not None:
             img = self.transforms(img)
 
-        return img
+        return img, 0  # 0 class to be consistent with x, y return format
 
 
 def get_dataset():

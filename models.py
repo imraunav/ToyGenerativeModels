@@ -21,18 +21,9 @@ def efficientconv(in_ch, out_ch, kernel_size, stride=1, padding=0, bias=True):
             nn.Conv2d(
                 in_ch,
                 in_ch,
-                (kernel_size, 1),
-                (stride, 1),
-                (padding, 0),
-                groups=in_ch,
-                bias=bias,
-            ),
-            nn.Conv2d(
-                in_ch,
-                in_ch,
-                (1, kernel_size),
-                (1, stride),
-                (0, padding),
+                kernel_size,
+                stride,
+                padding,
                 groups=in_ch,
                 bias=bias,
             ),
@@ -88,7 +79,7 @@ class ResBlock(nn.Module):
         in_ch,
         out_ch,
         emb_dim,
-        num_groups=8,
+        num_groups=32,
         model_ch=None,
     ):
         super().__init__()
@@ -142,8 +133,8 @@ class SelfAttention(nn.Module):
         self.num_groups = num_groups
 
         self.norm = nn.GroupNorm(num_groups, channels)
-        self.qkv = efficientconv(channels, channels * 3 * num_heads, 1)
-        self.proj_out = efficientconv(channels * num_heads, channels, 1)
+        self.qkv = nn.Conv2d(channels, channels * 3 * num_heads, 1)
+        self.proj_out = nn.Conv2d(channels * num_heads, channels, 1)
 
         # init
         self._weight_init()
@@ -167,7 +158,7 @@ class SelfAttention(nn.Module):
         h = F.scaled_dot_product_attention(q, k, v)  # flash attention
         h = rearrange(
             h,
-            "n head (h w) c -> n (head c) h w",
+            "n head (h w) c -> n (c head) h w",
             h=H,
             w=W,
             head=self.num_heads,
@@ -344,7 +335,7 @@ if __name__ == "__main__":
     num_par = 0
     for p in m.parameters():
         num_par += p.numel()
-    print(f"No. parameters: {num_par/1_000_000:.3f}M")  # 9.903M
+    print(f"No. parameters: {num_par:,}")  # 9.903M
     x = torch.randn((4, 3, 64, 64))
     t = torch.randint(0, 1000, (4,))
     y = torch.randint(0, 10, (4,))
