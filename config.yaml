@@ -1,0 +1,26 @@
+model:
+  in_ch: 3
+  out_ch: 3
+  model_ch: 128
+  timesteps: 1000
+  time_emb_dim: 512
+  num_resblock: 4
+  ch_mult: [1, 1, 2, 2, 2]
+  attn_ds: [4, 8, 16]
+  num_heads: 8
+
+diffusion:
+  num_timesteps: 1000
+
+training:
+  max_step: 500_000
+  ddp: False
+  root: /scratch/ravnavg.scee.iitmandi/14-celebrity-faces-dataset/data # /Users/raunavghosh/Documents/code_projects/14-celebrity-faces-dataset/data
+  batch_size: 128
+  mini_batch_size: 8
+  ema_rate: 0.999
+
+optimizer:
+  lr: 1e-4
+  betas: [0.9, 0.995]
+  amsgrad: True
