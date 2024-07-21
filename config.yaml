@@ -14,7 +14,6 @@ diffusion:
 
 training:
   max_step: 500_000
-  ddp: False
   root: /scratch/ravnavg.scee.iitmandi/14-celebrity-faces-dataset/data # /Users/raunavghosh/Documents/code_projects/14-celebrity-faces-dataset/data
   batch_size: 128
   mini_batch_size: 8

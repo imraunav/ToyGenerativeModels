@@ -19,7 +19,7 @@ def broadcast_tensor_op(x, shape):
 @torch.no_grad()
 def _zero_init(m: nn.Module):
     for p in m.parameters():
-        p.data.zero_()
+        nn.init.constant_(p.data, 0)
     return m
 
 
