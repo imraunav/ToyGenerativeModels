@@ -74,11 +74,14 @@ class GaussianDiffusion:
         ) + beta_t.sqrt() * noise
 
     @torch.no_grad()
-    def sample(self, model, n=1, img_size=(64, 64)):
+    def sample(self, model, n=1, img_size=(64, 64), x_t=None):
         model.eval()
         device = next(model.parameters()).device
         h, w = img_size
-        x_t = torch.randn(n, model.out_ch, h, w, device=device)
+        if x_t is None:
+            x_t = torch.randn(n, model.out_ch, h, w, device=device)
+        else:
+            x_t = x_t.to(device)
         for t in reversed(range(self.num_timesteps)):
             if t > 1:
                 z = torch.randn_like(x_t)

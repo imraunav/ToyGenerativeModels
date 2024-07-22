@@ -145,6 +145,7 @@ torch.set_float32_matmul_precision("high")
 diffusion = GaussianDiffusion(**config["diffusion"])
 model = UnetDiffusion(**config["model"])
 model.to(device)
+torch.compile(model)
 if ddp:
     syncronize_params(model)  # sanity check
     model = DDP(model, device_ids=[ddp_local_rank], find_unused_parameters=True)
@@ -223,8 +224,8 @@ for step in range(max_step):
 
     # every once in a while generate samples
     if step % 200 == 0 and master_process:
-        samples = diffusion.sample(raw_model, 4, img_size=(128, 128))
-        samples = make_grid(samples, nrow=2)
+        samples = diffusion.sample(raw_model, 16, img_size=(128, 128))
+        samples = make_grid(samples, nrow=4)
         save_image(samples, f"sample/step_{step}.png")
 
     # get a batch
