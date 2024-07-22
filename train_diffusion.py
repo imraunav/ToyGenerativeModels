@@ -30,10 +30,14 @@ def set_seed(seed):
 
 
 @torch.no_grad()
-def update_ema(model, model_ema, ema_rate=0.999):
-    for p, p_ema in zip(model.parameters(), model_ema.parameters()):
-        ema = ema_rate * p.data + (1.0 - ema_rate) * p_ema.data
-        p_ema.data = ema
+def update_ema(target_model, source_model, ema_rate=0.999):
+    """
+    :param target_model: the model that takes up all the average. This is the EMA model
+    :param source_model: the model that gives the new averaging values. This is the Raw model
+    """
+    for p_tgt, p_src in zip(target_model.parameters(), source_model.parameters()):
+        ema = ema_rate * p_tgt.data + (1.0 - ema_rate) * p_src.data
+        p_tgt.data = ema
 
 
 def data_wrapper(loader, sampler=None):
@@ -87,6 +91,15 @@ def forward_backward(batch, model, optimizer, diffusion):
     return loss_accum
 
 
+def syncronize_params(m):
+    """
+    Broadcast to syncronize the module parameters across all processes.
+    Sanity check.
+    """
+    for p in m.parameters():
+        dist.broadcast(p.data, 0)
+
+
 # Instantiations and inits
 # -------------------------------------------------------------------------------------------------
 config = OmegaConf.load("./config.yaml")
@@ -131,6 +144,7 @@ diffusion = GaussianDiffusion(**config["diffusion"])
 model = UnetDiffusion(**config["model"])
 model.to(device)
 if ddp:
+    syncronize_params(model)
     model = DDP(model, device_ids=[ddp_local_rank], find_unused_parameters=True)
 raw_model = model.module if ddp else model  # always contains the "raw" unwrapped model
 
@@ -201,8 +215,9 @@ for step in range(max_step):
     # start of exponential avg
     if step == 1000 and master_process:
         ema_model = deepcopy(raw_model)
-    if step > 1000 and step % 1000 == 0 and master_process:
-        update_ema(raw_model, ema_model, ema_rate)
+        ema_model.requires_grad_(False)  # safety check
+    if step > 1000 and master_process:
+        update_ema(ema_model, raw_model, ema_rate)
 
     # every once in a while generate samples
     if step % 200 == 0 and master_process:
@@ -238,7 +253,7 @@ for step in range(max_step):
                 "step": step,
                 "train_loss": train_loss,
             }
-            torch.save("checkpoint.pt", checkpoint)
+            torch.save(checkpoint, "checkpoint.pt")
 
 if ddp:
     destroy_process_group()

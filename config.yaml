@@ -8,6 +8,7 @@ model:
   ch_mult: [1, 1, 2, 2, 2]
   attn_ds: [4, 8, 16]
   num_heads: 8
+  dropout_p: 0.3
 
 diffusion:
   num_timesteps: 1000
@@ -17,7 +18,7 @@ training:
   root: /scratch/ravnavg.scee.iitmandi/14-celebrity-faces-dataset/data # /Users/raunavghosh/Documents/code_projects/14-celebrity-faces-dataset/data
   batch_size: 128
   mini_batch_size: 8
-  ema_rate: 0.999
+  ema_rate: 0.9999
 
 optimizer:
   lr: 1e-4

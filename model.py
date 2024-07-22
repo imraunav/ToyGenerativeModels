@@ -52,7 +52,7 @@ class TimestepSequential(nn.Sequential, TimestepLayer):
 
 
 class ResBlock(TimestepLayer):
-    def __init__(self, in_ch, out_ch, time_emb_dim):
+    def __init__(self, in_ch, out_ch, time_emb_dim, dropout_p=0.3):
         super().__init__()
         self.in_ch = in_ch
         self.out_ch = out_ch
@@ -73,6 +73,7 @@ class ResBlock(TimestepLayer):
         self.mlp = nn.Sequential(
             normalization(time_emb_dim),
             nn.SiLU(),
+            nn.Dropout(dropout_p),
             nn.Linear(time_emb_dim, out_ch),
         )
         if in_ch != out_ch:
@@ -126,6 +127,7 @@ class UnetDiffusion(nn.Module):
         ch_mult=[1, 1, 2, 2],
         attn_ds=[4],
         num_heads=1,
+        dropout_p=0.3,
     ):
         super().__init__()
         self.in_ch = in_ch
@@ -137,6 +139,7 @@ class UnetDiffusion(nn.Module):
         self.ch_mult = ch_mult
         self.attn_ds = attn_ds
         self.num_heads = num_heads
+        self.dropout_p = dropout_p
 
         self.in_conv = nn.Conv2d(in_ch, model_ch, 3, 1, 1)
         skip_ch = [model_ch]
@@ -151,7 +154,7 @@ class UnetDiffusion(nn.Module):
             # skip connections go from _block to _block
             _block = nn.ModuleList()
             for i in range(num_resblock):
-                layers = [ResBlock(prev_ch, model_ch * mult, time_emb_dim)]
+                layers = [ResBlock(prev_ch, model_ch * mult, time_emb_dim, dropout_p)]
                 prev_ch = model_ch * mult
                 if ds in attn_ds:
                     layers.append(SelfAttention(prev_ch, num_heads))
@@ -166,9 +169,9 @@ class UnetDiffusion(nn.Module):
                 self.downsample.append(nn.Identity())
 
         self.bottleneck = TimestepSequential(
-            ResBlock(prev_ch, prev_ch, time_emb_dim),
+            ResBlock(prev_ch, prev_ch, time_emb_dim, dropout_p),
             SelfAttention(prev_ch, num_heads),
-            ResBlock(prev_ch, prev_ch, time_emb_dim),
+            ResBlock(prev_ch, prev_ch, time_emb_dim, dropout_p),
         )
 
         for level, mult in enumerate(reversed(ch_mult)):
@@ -180,7 +183,12 @@ class UnetDiffusion(nn.Module):
             _block = nn.ModuleList()
             for i in range(num_resblock):
                 layers = [
-                    ResBlock(prev_ch + skip_ch.pop(), model_ch * mult, time_emb_dim)
+                    ResBlock(
+                        prev_ch + skip_ch.pop(),
+                        model_ch * mult,
+                        time_emb_dim,
+                        dropout_p,
+                    )
                 ]
                 prev_ch = model_ch * mult
                 if ds in attn_ds:
