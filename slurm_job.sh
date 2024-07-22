@@ -6,7 +6,7 @@
 #SBATCH --job-name=ToyDiffusion  #change name of ur job
 #SBATCH --output=output  #change name of ur output file
 #SBATCH --partition=gpu  #there are various partition. U can change various GPUs
-#SBATCH --gres=gpu:2 #same as above
+#SBATCH --gres=gpu:1 #same as above
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=t22104@students.iitmandi.ac.in
 
@@ -18,4 +18,4 @@ source /home/apps/DL/DL-CondaPy3.7/bin/activate torch
 cd $SLURM_SUBMIT_DIR
 
 # python train_diffusion.py
-torchrun --standalone --nproc_per_node=2 train_diffusion.py
+CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 train_diffusion.py

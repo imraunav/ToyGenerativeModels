@@ -137,7 +137,7 @@ else:
 device_type = "cuda" if device.startswith("cuda") else "cpu"
 
 seed = config.get("seed", 1337)
-print(f"Seed set: {seed}")
+print(f"[{device}] Seed set: {seed}")
 set_seed(seed)
 torch.set_float32_matmul_precision("high")
 
