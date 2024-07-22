@@ -136,15 +136,17 @@ else:
 
 device_type = "cuda" if device.startswith("cuda") else "cpu"
 
-seed = 1337
+seed = config.get("seed", 1337)
+print(f"Seed set: {seed}")
 set_seed(seed)
+torch.set_float32_matmul_precision("high")
 
 # model configs -----------------------------------------------------------------------------------
 diffusion = GaussianDiffusion(**config["diffusion"])
 model = UnetDiffusion(**config["model"])
 model.to(device)
 if ddp:
-    syncronize_params(model)
+    syncronize_params(model)  # sanity check
     model = DDP(model, device_ids=[ddp_local_rank], find_unused_parameters=True)
 raw_model = model.module if ddp else model  # always contains the "raw" unwrapped model
 
