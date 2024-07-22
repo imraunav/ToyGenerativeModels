@@ -139,7 +139,7 @@ device_type = "cuda" if device.startswith("cuda") else "cpu"
 seed = config.get("seed", 1337)
 print(f"[{device}] Seed set: {seed}")
 set_seed(seed)
-torch.set_float32_matmul_precision("high")
+torch.set_float32_matmul_precision("medium")
 
 # model configs -----------------------------------------------------------------------------------
 diffusion = GaussianDiffusion(**config["diffusion"])
@@ -224,8 +224,8 @@ for step in range(max_step):
 
     # every once in a while generate samples
     if step % 200 == 0 and master_process:
-        samples = diffusion.sample(raw_model, 16, img_size=(128, 128))
-        samples = make_grid(samples, nrow=4)
+        samples = diffusion.sample(raw_model, 4, img_size=(128, 128))
+        samples = make_grid(samples, nrow=2)
         save_image(samples, f"sample/step_{step}.png")
 
     # get a batch
