@@ -73,12 +73,15 @@ def forward_backward(batch, model, optimizer, diffusion):
     for mini_batch in make_minibatches(batch):
         if ddp:
             model.require_backward_grad_sync = mini_step == grad_accum_steps - 1
-        mini_batch = mini_batch.to(device)
+        # mini_batch = mini_batch.to(device)
 
         n = mini_batch.shape[0]
-        t = diffusion.sample_timesteps(n).to(device)
+        t = diffusion.sample_timesteps(n)
         x_t, noise = diffusion.q_sample(mini_batch, t)
 
+        x_t = x_t.to(device)
+        t = t.to(device)
+        noise = noise.to(device)
         # forward pass
         pred = model(x_t, t)
         loss = F.mse_loss(pred, noise)
