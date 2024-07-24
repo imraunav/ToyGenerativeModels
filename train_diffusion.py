@@ -14,6 +14,7 @@ from torch.distributed import init_process_group, destroy_process_group
 import torch.distributed as dist
 from functools import partial
 import os
+from time import time
 
 from diffusion import GaussianDiffusion
 from model import UnetDiffusion
@@ -27,6 +28,14 @@ def set_seed(seed):
     torch.cuda.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
+
+def print0(*args, **kwargs):
+    """
+    Convinient code to print only on master process
+    """
+    if master_process:
+        print(*args, **kwargs)
 
 
 @torch.no_grad()
@@ -77,6 +86,8 @@ def forward_backward(batch, model, optimizer, diffusion):
 
         n = mini_batch.shape[0]
         t = diffusion.sample_timesteps(n)
+        # sanity check, also easy while debugging
+        t = t.to(mini_batch.device)
         x_t, noise = diffusion.q_sample(mini_batch, t)
 
         x_t = x_t.to(device)
@@ -151,12 +162,13 @@ model.to(device)
 torch.compile(model)
 if ddp:
     syncronize_params(model)  # sanity check
-    model = DDP(model, device_ids=[ddp_local_rank], find_unused_parameters=True)
+    model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module if ddp else model  # always contains the "raw" unwrapped model
 
 # dataloader configs ------------------------------------------------------------------------------
 root = config["training"]["root"]
 batch_size = config["training"]["batch_size"]
+img_size = config.get("img_size", 64)
 if ddp:
     assert batch_size % ddp_world_size == 0
     batch_size = batch_size // ddp_world_size
@@ -168,7 +180,7 @@ grad_accum_steps = batch_size // mini_batch_size
 ds_transforms = Compose(
     [
         RandomVerticalFlip(p=0.5),
-        Resize(128, 128),
+        Resize(img_size, img_size),
         ToTensor(),
         Normalize((0.5,), (0.5,)),
     ]
@@ -181,9 +193,12 @@ if ddp:
 loader = torch.utils.data.DataLoader(
     ds,
     batch_size,
-    shuffle=not ddp,
+    shuffle=sampler is None,
     drop_last=True,
     sampler=sampler,
+    num_workers=2,
+    pin_memory=True,
+    prefetch_factor=2,
 )
 # generator that takes care of the fetching data per iterations
 data_fetcher = data_wrapper(loader, sampler)
@@ -198,8 +213,8 @@ if master_process:
     param_count = 0
     for p in model.parameters():
         param_count += p.numel()
-    with open(log_file, "w") as f:
-        print(f"{param_count=:,}", file=f)
+    # with open(log_file, "w") as f:
+    print0(f"{param_count=:,}")
 
 optimizer = torch.optim.AdamW(raw_model.parameters(), **config["optimizer"])
 make_minibatches = partial(make_minibatches, mini_batch_size=mini_batch_size)
@@ -209,6 +224,15 @@ forward_backward = partial(
     optimizer=optimizer,
     diffusion=diffusion,
 )
+# Debug
+# -------------------------------------------------------------------------------------------------
+# batch = ds[0]
+# c, h, w = batch.shape
+# batch = batch.view(1, c, h, w)
+# batch = batch.repeat(batch_size, 1, 1, 1)
+# batch = batch.to(device)
+# print0(f"Debug batch size: {batch.shape}")
+# print0(f"{batch[0].min()=}, {batch[0].max()=}")
 
 # Training loop
 # -------------------------------------------------------------------------------------------------
@@ -226,23 +250,28 @@ for step in range(max_step):
         update_ema(ema_model, raw_model, ema_rate)
 
     # every once in a while generate samples
-    if step % 200 == 0 and master_process:
-        samples = diffusion.sample(raw_model, 4, img_size=(128, 128))
+    if step % 250 == 0 and master_process:
+        samples = diffusion.sample(raw_model, 4, img_size=(img_size, img_size))
         samples = make_grid(samples, nrow=2)
         save_image(samples, f"sample/step_{step}.png")
 
     # get a batch
+    tic = time()
     batch = next(data_fetcher)
     loss_accum = forward_backward(batch)
-    dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
+    if ddp:
+        dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     lr_schedule(optimizer, step)
     optimizer.step()
     # wait for the GPU to finish work, can cause weird behaviors at times if not done.
     if device_type == "cuda":
         torch.cuda.synchronize()
-
+    toc = time()
     # log
+    print0(
+        f"step: {step:6d}/{max_step:6d} | loss: {loss_accum.item():.6f} | norm: {norm:.5f} | time: {(toc - tic):.3f} secs",
+    )
     if master_process:
         with open(log_file, "a") as f:
             print(

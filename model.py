@@ -18,8 +18,11 @@ def broadcast_tensor_op(x, shape):
 
 @torch.no_grad()
 def _zero_init(m: nn.Module):
+    """
+    Initialize module with 0 parameters and return the same module
+    """
     for p in m.parameters():
-        nn.init.constant_(p.data, 0)
+        nn.init.constant_(p.data, 0.0)
     return m
 
 
@@ -112,6 +115,7 @@ class SelfAttention(nn.Module):
         q, k, v = torch.chunk(qkv, 3, dim=-1)
         h = F.scaled_dot_product_attention(q, k, v)
         h = rearrange(h, "n head l c -> n (head c) l")
+        h = self.proj_out(h)
         return rearrange(x + h, "n c (h w) -> n c h w", c=C, h=H, w=W)
 
 
@@ -177,7 +181,6 @@ class UnetDiffusion(nn.Module):
         for level, mult in enumerate(reversed(ch_mult)):
             if level != 0:
                 self.upsample.append(nn.UpsamplingNearest2d(scale_factor=2))
-                ds //= 2
             else:
                 self.upsample.append(nn.Identity())
             _block = nn.ModuleList()
@@ -196,6 +199,7 @@ class UnetDiffusion(nn.Module):
 
                 _block.append(TimestepSequential(*layers))
             self.ups.append(_block)
+            ds //= 2
 
         prev_ch += skip_ch.pop()
         self.out_conv = nn.Sequential(
