@@ -15,6 +15,7 @@ import torch.distributed as dist
 from functools import partial
 import os
 from time import time
+from datetime import datetime
 
 from diffusion import GaussianDiffusion
 from model import UnetDiffusion
@@ -82,6 +83,7 @@ def forward_backward(batch, model, optimizer, diffusion):
     for mini_batch in make_minibatches(batch):
         if ddp:
             model.require_backward_grad_sync = mini_step == grad_accum_steps - 1
+            mini_step += 1
         # mini_batch = mini_batch.to(device)
 
         n = mini_batch.shape[0]
@@ -101,7 +103,6 @@ def forward_backward(batch, model, optimizer, diffusion):
 
         # backward pass
         loss.backward()
-        mini_step += 1
     return loss_accum
 
 
@@ -153,7 +154,7 @@ device_type = "cuda" if device.startswith("cuda") else "cpu"
 seed = config.get("seed", 1337)
 print(f"[{device}] Seed set: {seed}")
 set_seed(seed)
-torch.set_float32_matmul_precision("medium")
+torch.set_float32_matmul_precision("high")
 
 # model configs -----------------------------------------------------------------------------------
 diffusion = GaussianDiffusion(**config["diffusion"])
@@ -182,7 +183,7 @@ ds_transforms = Compose(
         RandomVerticalFlip(p=0.5),
         Resize(img_size, img_size),
         ToTensor(),
-        Normalize((0.5,), (0.5,)),
+        Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ]
 )
 ds = ImageDataset(root, ds_transforms)
@@ -207,7 +208,8 @@ data_fetcher = data_wrapper(loader, sampler)
 os.makedirs("logs/", exist_ok=True)
 os.makedirs("sample/", exist_ok=True)
 log_file = "logs/log.txt"
-
+with open(log_file, "w") as f:
+    print0(f"Logging starts at: {datetime.now()}", file=f)
 # start of logging --------------------------------------------------------------------------------
 if master_process:
     param_count = 0

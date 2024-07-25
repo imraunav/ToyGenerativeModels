@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH -N 1
-#SBATCH --ntasks-per-node=8 #number of cores per node
+#SBATCH --ntasks-per-node=16 #number of cores per node
 #SBATCH --time=3-01:59:30
 #SBATCH --job-name=ToyDiffusion  #change name of ur job
 #SBATCH --output=output  #change name of ur output file

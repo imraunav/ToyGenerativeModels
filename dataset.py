@@ -51,7 +51,8 @@ class Resize:
         self.width = width
 
     def __call__(self, img):
-        return cv2.resize(img, (self.height, self.width))
+        img = cv2.resize(img, (self.height, self.width))
+        return img
 
 
 class ImageDataset(Dataset):
@@ -78,23 +79,27 @@ class ImageDataset(Dataset):
         return img
 
 
-# if __name__ == "__main__":
-#     path = "/Users/raunavghosh/Documents/code_projects/14-celebrity-faces-dataset/data"
-#     # path = "/Users/raunavghosh/Downloads/tinyface"
-#     ds_transforms = transforms.Compose(
-#         [
-#             RandomVerticalFlip(0.5),
-#             # RandomCrop(256, 512),
-#             Resize(256, 256),
-#         ]
-#     )
-#     ds = ImageDataset(path, ds_transforms)
+if __name__ == "__main__":
+    path = "/Users/raunavghosh/Documents/code_projects/14-celebrity-faces-dataset/data"
+    # path = "/Users/raunavghosh/Downloads/tinyface"
+    ds_transforms = transforms.Compose(
+        [
+            RandomVerticalFlip(0.5),
+            # RandomCrop(256, 512),
+            Resize(256, 256),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
+        ]
+    )
+    ds = ImageDataset(path, ds_transforms)
 
-#     for i in range(len(ds)):
-#         img = ds[i]
-#         cv2.imshow("img", img[..., ::-1])
-#         cv2.waitKey(100)
-#         cv2.destroyAllWindows()
+    for i in range(len(ds)):
+        img = ds[0]
+        print(img.min(), img.max())
+        print(img.dtype)
+        # cv2.imshow("img", img[..., ::-1])
+        # cv2.waitKey(100)
+        # cv2.destroyAllWindows()
 
 
 # class LogoDataset(Dataset):
