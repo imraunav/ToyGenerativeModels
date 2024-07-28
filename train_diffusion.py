@@ -1,6 +1,5 @@
 import os
 import torch
-import torch.nn.functional as F
 import numpy as np
 import random
 import torch.distributed as dist
@@ -8,12 +7,11 @@ from copy import deepcopy
 from datetime import datetime
 from functools import partial
 from omegaconf import OmegaConf
-from torch.distributed import init_process_group, destroy_process_group
+from time import time
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DistributedSampler
+from torch.utils.data import DistributedSampler, DataLoader
 from torchvision.transforms import Compose, ToTensor, Lambda
 from torchvision.utils import save_image, make_grid
-from time import time
 
 from diffusion import GaussianDiffusion
 from model import UnetDiffusion
@@ -71,6 +69,7 @@ def lr_schedule(optimizer, step):
     pass
 
 
+@torch.compile
 def forward_backward(batch, model, diffusion):
     # make a mini_batch from batch
     model.train()
@@ -119,7 +118,7 @@ ddp = int(os.environ.get("RANK", -1)) != -1  # is this a ddp run?
 if ddp:
     # use of DDP atm demands CUDA, we set the device appropriately according to rank
     assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
-    init_process_group(backend="nccl")
+    dist.init_process_group(backend="nccl")
     ddp_rank = int(os.environ["RANK"])
     ddp_local_rank = int(os.environ["LOCAL_RANK"])
     ddp_world_size = int(os.environ["WORLD_SIZE"])
@@ -187,7 +186,7 @@ ds = ImageDataset(root, ds_transforms)
 sampler = None
 if ddp:
     sampler = DistributedSampler(ds, shuffle=True, seed=seed, drop_last=True)
-loader = torch.utils.data.DataLoader(
+loader = DataLoader(
     ds,
     batch_size,
     shuffle=sampler is None,
@@ -291,4 +290,4 @@ for step in range(max_step):
             torch.save(checkpoint, "checkpoint.pt")
 
 if ddp:
-    destroy_process_group()
+    dist.destroy_process_group()
