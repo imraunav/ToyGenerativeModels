@@ -87,20 +87,27 @@ if __name__ == "__main__":
             RandomVerticalFlip(0.5),
             # RandomCrop(256, 512),
             Resize(256, 256),
+            transforms.Lambda(lambda x: (x / 127.5) - 1.0),
             transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
+            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
         ]
     )
     ds = ImageDataset(path, ds_transforms)
-
+    mean = np.zeros((3,), dtype=np.float16)
+    std = np.zeros((3,), dtype=np.float16)
     for i in range(len(ds)):
-        img = ds[0]
-        print(img.min(), img.max())
-        print(img.dtype)
+        img = ds[i]
+        print(img.shape)
+        # print(img.min(), img.max())
+        # print(img.dtype)
+        # mean += img.mean(axis=(0, 1)) / len(ds)
+        # std += img.std(axis=(0, 1)) / len(ds)
         # cv2.imshow("img", img[..., ::-1])
-        # cv2.waitKey(100)
+        # cv2.waitKey(500)
         # cv2.destroyAllWindows()
 
+    print(f"Dataset: {mean=}, {std=}")
+# Dataset: [-0.0734 -0.1951 -0.2434], [0.56799095 0.5226018  0.51282858]
 
 # class LogoDataset(Dataset):
 #     def __init__(self, root_dir, transforms=None):

@@ -31,7 +31,7 @@ def timestep_embedding(timesteps, dim, max_period=10000):
     half = dim // 2
     i = torch.arange(0, half, dtype=torch.float32)
     freq = torch.exp(-math.log(max_period) * i / half).to(device)
-    args = timesteps[:, None].float() * freq[None]
+    args = timesteps[..., None].float() * freq[None, ...]
     embedding = torch.cat([torch.sin(args), torch.cos(args)], dim=-1)
     if dim % 2 != 0:
         embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)

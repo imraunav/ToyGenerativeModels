@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import math
 from tqdm import tqdm
-from torchvision.utils import save_image
+from torchvision.utils import save_image, make_grid
 
 from model import UnetDiffusion
 
@@ -61,19 +61,31 @@ class GaussianDiffusion:
 
     def q_sample(self, x_start: torch.tensor, t: torch.tensor):
         """
-        Sample for the analytic expression using reparameterisation from the forward process
+        Sample from the forward process using reparameterisation.
+        i.e., sample from q(x_{t}|x_{0})
         :param x_start: x_{0} clean datapoint
         :param t: t timestep
+
+        Return: x_{t}, noise
         """
         noise = torch.randn_like(x_start)
         assert x_start.device == t.device, f"{x_start.device} != {t.device}"
         sqrt_alpha_cumprod_t = _totensor(
             self.sqrt_alphas_cumprod[t.cpu()], x_start.shape, t
         )
-        mean = sqrt_alpha_cumprod_t * x_start
-        std = _totensor(self.sqrt_one_minus_alphas_cumprod[t.cpu()], x_start.shape, t)
+        sqrt_one_minus_alpha_cumprod_t = _totensor(
+            self.sqrt_one_minus_alphas_cumprod[t.cpu()], x_start.shape, t
+        )
 
-        return mean + std * noise, noise
+        x_t = sqrt_alpha_cumprod_t * x_start + sqrt_one_minus_alpha_cumprod_t * noise
+        return x_t, noise
+
+    # def _xstart_from_eps(self, x_t, t, eps):
+
+    #     recip_sqrt_alpha_cumprod_t = 1.0 / self.sqrt_alphas_cumprod
+
+    #     x_start =
+    #     return x_start
 
     def sample_timesteps(self, n):
         return torch.randint(0, self.num_timesteps, (n,))
@@ -90,12 +102,12 @@ class GaussianDiffusion:
         :param pertubation: small unit normal noise for pertubation
         """
         beta_t = _totensor(self.betas[t.cpu()], x_t.shape, x_t)
-        alpha_t = 1.0 - beta_t
+        recip_sqrt_alpha_t = 1.0 / torch.sqrt(1.0 - beta_t)
         sqrt_one_minus_alpha_cumprod_t = _totensor(
             self.sqrt_one_minus_alphas_cumprod[t.cpu()], x_t.shape, x_t
         )
 
-        pred_mean = (1 / torch.sqrt(alpha_t)) * (
+        pred_mean = recip_sqrt_alpha_t * (
             x_t - model_pred * beta_t / sqrt_one_minus_alpha_cumprod_t
         )
         posterior_variance = _totensor(self.posterior_variance[t.cpu()], x_t.shape, x_t)
@@ -121,10 +133,36 @@ class GaussianDiffusion:
             if t > 1:
                 pertubation = torch.randn_like(x_t)
             t = torch.full((n,), t, device=device)
+
             model_pred = model(x_t, t)
             x_t = self.p_sample(x_t, t, model_pred, pertubation)
-            if save_every:
-                save_image(model_pred, f"denoising_steps/noise_pred__{t[0].item()}.png")
-                save_image(x_t, f"denoising_steps/img_pred__{t[0].item()}.png")
         x_t = x_t.clip(-1.0, 1.0)
         return x_t
+
+    def training_loss(self, model, x_start):
+        device = next(model.parameters()).device
+        n = x_start.shape[0]
+        t = self.sample_timesteps(n)
+        # sanity check, also easy while debugging
+        t = t.to(x_start.device)
+        x_t, noise = self.q_sample(x_start, t)
+
+        x_t = x_t.to(device)
+        t = t.to(device)
+        noise = noise.to(device)
+
+        # forward pass
+        pred_noise = model(x_t, t)
+        loss = F.mse_loss(pred_noise, noise)
+
+        return loss
+
+
+# if __name__ == "__main__":
+#     # debugging the scaling of the weights by the noise schedule
+#     diff = GaussianDiffusion(1000)
+
+#     import matplotlib.pyplot as plt
+
+#     plt.plot()
+#     plt.show()

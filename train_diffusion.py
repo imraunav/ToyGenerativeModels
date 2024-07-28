@@ -1,21 +1,19 @@
+import os
 import torch
 import torch.nn.functional as F
 import numpy as np
 import random
-from omegaconf import OmegaConf
-from copy import deepcopy
-import torch.utils
-from torch.utils.data import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.utils.data
-from torchvision.transforms import Compose, ToTensor, Normalize
-from torchvision.utils import save_image, make_grid
-from torch.distributed import init_process_group, destroy_process_group
 import torch.distributed as dist
-from functools import partial
-import os
-from time import time
+from copy import deepcopy
 from datetime import datetime
+from functools import partial
+from omegaconf import OmegaConf
+from torch.distributed import init_process_group, destroy_process_group
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DistributedSampler
+from torchvision.transforms import Compose, ToTensor, Lambda
+from torchvision.utils import save_image, make_grid
+from time import time
 
 from diffusion import GaussianDiffusion
 from model import UnetDiffusion
@@ -73,36 +71,29 @@ def lr_schedule(optimizer, step):
     pass
 
 
-def forward_backward(batch, model, optimizer, diffusion):
+def forward_backward(batch, model, diffusion):
     # make a mini_batch from batch
     model.train()
-    device = next(model.parameters()).device
-    optimizer.zero_grad()
     loss_accum = 0
     mini_step = 0
+
     for mini_batch in make_minibatches(batch):
         if ddp:
-            model.require_backward_grad_sync = mini_step == grad_accum_steps - 1
+            # sync grads when on last mini batch
+            model.require_backward_grad_sync = (
+                mini_step == grad_accum_steps - 1
+            )  # Karpaty Trick
             mini_step += 1
-        # mini_batch = mini_batch.to(device)
 
-        n = mini_batch.shape[0]
-        t = diffusion.sample_timesteps(n)
-        # sanity check, also easy while debugging
-        t = t.to(mini_batch.device)
-        x_t, noise = diffusion.q_sample(mini_batch, t)
-
-        x_t = x_t.to(device)
-        t = t.to(device)
-        noise = noise.to(device)
         # forward pass
-        pred = model(x_t, t)
-        loss = F.mse_loss(pred, noise)
-        loss = loss / grad_accum_steps
-        loss_accum += loss.detach()
+        with autocast:
+            loss = diffusion.training_loss(model, mini_batch)
+            loss = loss / grad_accum_steps
+            loss_accum += loss.detach()
 
         # backward pass
-        loss.backward()
+        # loss.backward()
+        scaler.scale(loss).backward()
     return loss_accum
 
 
@@ -152,6 +143,7 @@ else:
 device_type = "cuda" if device.startswith("cuda") else "cpu"
 
 seed = config.get("seed", 1337)
+use_float16 = config.get("use_float16", False)
 print(f"[{device}] Seed set: {seed}")
 set_seed(seed)
 torch.set_float32_matmul_precision("high")
@@ -159,6 +151,8 @@ torch.set_float32_matmul_precision("high")
 # model configs -----------------------------------------------------------------------------------
 diffusion = GaussianDiffusion(**config["diffusion"])
 model = UnetDiffusion(**config["model"])
+# if use_float16:
+#     model = model.half()
 model.to(device)
 torch.compile(model)
 if ddp:
@@ -182,8 +176,10 @@ ds_transforms = Compose(
     [
         RandomVerticalFlip(p=0.5),
         Resize(img_size, img_size),
+        Lambda(lambda x: x / 127.5 - 1.0),  # change range to [0, 255] -> [-1, 1]
+        Lambda(lambda x: x.astype(np.float32)),  # still np.array
         ToTensor(),
-        Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        Lambda(lambda x: x.half() if use_float16 else x),
     ]
 )
 ds = ImageDataset(root, ds_transforms)
@@ -210,6 +206,7 @@ os.makedirs("sample/", exist_ok=True)
 log_file = "logs/log.txt"
 with open(log_file, "w") as f:
     print0(f"Logging starts at: {datetime.now()}", file=f)
+
 # start of logging --------------------------------------------------------------------------------
 if master_process:
     param_count = 0
@@ -219,22 +216,15 @@ if master_process:
     print0(f"{param_count=:,}")
 
 optimizer = torch.optim.AdamW(raw_model.parameters(), **config["optimizer"])
+scaler = torch.cuda.amp.GradScaler(enabled=use_float16)
+autocast = torch.autocast(device_type, torch.float16, enabled=use_float16)
+
 make_minibatches = partial(make_minibatches, mini_batch_size=mini_batch_size)
 forward_backward = partial(
     forward_backward,
     model=model,
-    optimizer=optimizer,
     diffusion=diffusion,
 )
-# Debug
-# -------------------------------------------------------------------------------------------------
-# batch = ds[0]
-# c, h, w = batch.shape
-# batch = batch.view(1, c, h, w)
-# batch = batch.repeat(batch_size, 1, 1, 1)
-# batch = batch.to(device)
-# print0(f"Debug batch size: {batch.shape}")
-# print0(f"{batch[0].min()=}, {batch[0].max()=}")
 
 # Training loop
 # -------------------------------------------------------------------------------------------------
@@ -244,6 +234,7 @@ train_loss = []
 for step in range(max_step):
     # check if this is the last step
     last_step = step == (max_step - 1)
+
     # start of exponential avg
     if step == 1000 and master_process:
         ema_model = deepcopy(raw_model)
@@ -252,21 +243,27 @@ for step in range(max_step):
         update_ema(ema_model, raw_model, ema_rate)
 
     # every once in a while generate samples
-    if step % 250 == 0 and master_process:
-        samples = diffusion.sample(raw_model, 4, img_size=(img_size, img_size))
+    if step > 0 and step % 250 == 0 and master_process:
+        with autocast:
+            samples = diffusion.sample(raw_model, 4, img_size=(img_size, img_size))
         samples = make_grid(samples, nrow=2)
         save_image(samples, f"sample/step_{step}.png")
 
     # get a batch
     tic = time()
     batch = next(data_fetcher)
+    optimizer.zero_grad()
     loss_accum = forward_backward(batch)
     if ddp:
         dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
+    scaler.unscale_(optimizer)
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     lr_schedule(optimizer, step)
-    optimizer.step()
-    # wait for the GPU to finish work, can cause weird behaviors at times if not done.
+    # optimizer.step()
+    scaler.step(optimizer)
+    scaler.update()
+
+    # wait for the GPU to finish work, can cause weird behaviors at times if not done for ddp.
     if device_type == "cuda":
         torch.cuda.synchronize()
     toc = time()
@@ -286,6 +283,7 @@ for step in range(max_step):
             checkpoint = {
                 "model": raw_model.state_dict(),
                 "optim": optimizer.state_dict(),
+                "scaler": scaler.state_dict(),
                 "ema_model": ema_model.state_dict(),
                 "step": step,
                 "train_loss": train_loss,

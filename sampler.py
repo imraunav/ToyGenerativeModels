@@ -19,11 +19,11 @@ model = UnetDiffusion(**config["model"])
 model.to(device)
 
 checkpoint = torch.load("checkpoint.pt")
-model.load_state_dict(checkpoint["model"])
+model.load_state_dict(checkpoint["ema_model"])
 img_size = config.get("img_size", 64)
 
 
-samples = diffusion.sample(model, 1, img_size=(img_size, img_size), save_every=True)
+samples = diffusion.sample(model, 1, img_size=(img_size, img_size), save_every=False)
 print(f"{samples.min()=}, {samples.max()=}, {samples.mean()=}")
 samples = (samples + 1.0) * 0.5 * 255.0
 
