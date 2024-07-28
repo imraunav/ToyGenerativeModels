@@ -69,7 +69,6 @@ def lr_schedule(optimizer, step):
     pass
 
 
-@torch.compile
 def forward_backward(batch, model, diffusion):
     # make a mini_batch from batch
     model.train()
