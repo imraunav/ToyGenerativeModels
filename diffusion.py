@@ -6,8 +6,6 @@ import math
 from tqdm import tqdm
 from torchvision.utils import save_image, make_grid
 
-from model import UnetDiffusion
-
 
 # function definitions
 # -------------------------------------------------------------------------------------------------
