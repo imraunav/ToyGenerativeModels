@@ -27,7 +27,7 @@ def cosinebetas(steps: int):
     for i in range(steps):
         t1 = i / steps
         t2 = (i + 1) / steps
-        betas.append(min(1 - alpha_cum(t2) / alpha_cum(t1), 0.009))
+        betas.append(min(1 - alpha_cum(t2) / alpha_cum(t1), 0.999))
     return torch.tensor(betas, dtype=torch.float32)
 
 
