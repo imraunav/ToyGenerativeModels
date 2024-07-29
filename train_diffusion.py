@@ -161,14 +161,8 @@ raw_model = model.module if ddp else model  # always contains the "raw" unwrappe
 # dataloader configs ------------------------------------------------------------------------------
 root = config["training"]["root"]
 batch_size = config["training"]["batch_size"]
+print0(f"Batch size: {batch_size}")
 img_size = config.get("img_size", 64)
-if ddp:
-    assert batch_size % ddp_world_size == 0
-    batch_size = batch_size // ddp_world_size
-mini_batch_size = config["training"]["mini_batch_size"]
-ema_rate = config["training"]["ema_rate"]
-assert batch_size % mini_batch_size == 0
-grad_accum_steps = batch_size // mini_batch_size
 
 ds_transforms = Compose(
     [
@@ -181,6 +175,17 @@ ds_transforms = Compose(
     ]
 )
 ds = ImageDataset(root, ds_transforms)
+print0(f"Iters to epoch: {len(ds)//batch_size}")
+
+if ddp:
+    assert batch_size % ddp_world_size == 0
+    batch_size = batch_size // ddp_world_size
+    print0(f"GPU Batch size: {batch_size}")
+mini_batch_size = config["training"]["mini_batch_size"]
+ema_rate = config["training"]["ema_rate"]
+assert batch_size % mini_batch_size == 0
+grad_accum_steps = batch_size // mini_batch_size
+
 # ddp requires specialised sampling
 sampler = None
 if ddp:
