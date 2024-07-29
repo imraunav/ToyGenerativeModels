@@ -13,14 +13,29 @@ def cosinebetas(steps: int):
     """
     generate betas for Cosine noise schedule
     """
-    f = lambda t: math.cos((t / steps + 0.008) / 1.008 * math.pi * 0.5) ** 2
-    f_0 = f(0)
-    alpha_cum = lambda t: f(t) / f_0
-    beta = [
-        min(1 - (alpha_cum(t) / alpha_cum(t - 1)), 0.999)
-        for t in np.linspace(1, 1000, steps)
-    ]
-    return torch.tensor(beta, dtype=torch.float32)
+    # f = lambda t: math.cos((t / steps + 0.008) / 1.008 * math.pi * 0.5) ** 2
+    # f_0 = f(0)
+    # alpha_cum = lambda t: f(t) / f_0
+    # beta = [
+    #     min(1 - (alpha_cum(t) / alpha_cum(t - 1)), 0.999)
+    #     for t in np.linspace(1, 1000, steps)
+    # ]
+    # return torch.tensor(beta, dtype=torch.float32)
+
+    alpha_cum = lambda t_: math.cos((t_ + 0.008) / 1.008 * math.pi * 0.5) ** 2
+    betas = []
+    for i in range(steps):
+        t1 = i / steps
+        t2 = (i + 1) / steps
+        betas.append(min(1 - alpha_cum(t2) / alpha_cum(t1), 0.009))
+    return torch.tensor(betas, dtype=torch.float32)
+
+
+def linearbetas(steps: int, beta_start: float = 0.0001, beta_end: float = 0.02):
+    """
+    generate betas for Linear noise schedule
+    """
+    return torch.linspace(beta_start, beta_end, steps)
 
 
 def _totensor(x, broadcast_shape, device_tensor=None, device=None):
@@ -35,9 +50,15 @@ def _totensor(x, broadcast_shape, device_tensor=None, device=None):
 # Diffusion class
 # -------------------------------------------------------------------------------------------------
 class GaussianDiffusion:
-    def __init__(self, num_timesteps):
+    def __init__(self, num_timesteps, schedule_name="cosine"):
         self.num_timesteps = num_timesteps
-        self.betas = cosinebetas(num_timesteps)
+        if schedule_name == "cosine":
+            self.betas = cosinebetas(num_timesteps)
+        elif schedule_name == "linear":
+            self.betas = linearbetas(num_timesteps)
+        else:
+            raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
+
         alphas = 1 - self.betas
         self.alphas_cumprod = torch.cumprod(alphas, dim=0)
 
