@@ -15,7 +15,7 @@ model:
 
 diffusion:
   num_timesteps: 1000
-  schedule_name: cosine
+  schedule_name: linear
 
 training:
   max_step: 500_000
