@@ -16,6 +16,7 @@ model:
 diffusion:
   num_timesteps: 1000
   schedule_name: linear
+  use_posterior_variance: False
 
 training:
   max_step: 500_000

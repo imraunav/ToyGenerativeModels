@@ -27,6 +27,7 @@ def cosinebetas(steps: int):
     for i in range(steps):
         t1 = i / steps
         t2 = (i + 1) / steps
+        # clipping values at 0.009 worked better somehow, will have to investigate
         betas.append(min(1 - alpha_cum(t2) / alpha_cum(t1), 0.999))
     return torch.tensor(betas, dtype=torch.float32)
 
@@ -50,8 +51,14 @@ def _totensor(x, broadcast_shape, device_tensor=None, device=None):
 # Diffusion class
 # -------------------------------------------------------------------------------------------------
 class GaussianDiffusion:
-    def __init__(self, num_timesteps, schedule_name="cosine"):
+    def __init__(
+        self,
+        num_timesteps,
+        schedule_name="cosine",
+        use_posterior_variance=True,
+    ):
         self.num_timesteps = num_timesteps
+        self.use_posterior_variance = use_posterior_variance
         if schedule_name == "cosine":
             self.betas = cosinebetas(num_timesteps)
         elif schedule_name == "linear":
@@ -129,7 +136,12 @@ class GaussianDiffusion:
         pred_mean = recip_sqrt_alpha_t * (
             x_t - model_pred * beta_t / sqrt_one_minus_alpha_cumprod_t
         )
-        posterior_variance = _totensor(self.posterior_variance[t.cpu()], x_t.shape, x_t)
+        if self.use_posterior_variance:
+            posterior_variance = _totensor(
+                self.posterior_variance[t.cpu()], x_t.shape, x_t
+            )
+        else:
+            posterior_variance = beta_t
 
         return pred_mean + posterior_variance.sqrt() * pertubation
 
@@ -179,9 +191,9 @@ class GaussianDiffusion:
 
 # if __name__ == "__main__":
 #     # debugging the scaling of the weights by the noise schedule
-#     diff = GaussianDiffusion(1000)
+#     diff = GaussianDiffusion(1000, "cosine")
 
 #     import matplotlib.pyplot as plt
 
-#     plt.plot()
+#     plt.plot(diff.betas)
 #     plt.show()

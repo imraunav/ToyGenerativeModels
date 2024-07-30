@@ -2,6 +2,7 @@ import torch
 from omegaconf import OmegaConf
 import cv2
 import numpy as np
+from torchvision.utils import save_image, make_grid
 
 from diffusion import GaussianDiffusion
 from model import UnetDiffusion
@@ -22,18 +23,20 @@ checkpoint = torch.load("checkpoint.pt")
 model.load_state_dict(checkpoint["ema_model"])
 img_size = config.get("img_size", 64)
 
+with torch.autocast(device, torch.float16):
+    samples = diffusion.sample(model, 16, img_size=(img_size, img_size), save_every=False)
+samples = make_grid(samples, 4)
+save_image(samples, 'sample.png')
+# print(f"{samples.min()=}, {samples.max()=}, {samples.mean()=}")
+# samples = (samples + 1.0) * 0.5 * 255.0
 
-samples = diffusion.sample(model, 1, img_size=(img_size, img_size), save_every=False)
-print(f"{samples.min()=}, {samples.max()=}, {samples.mean()=}")
-samples = (samples + 1.0) * 0.5 * 255.0
+# samples = samples.permute(0, 2, 3, 1)
+# samples = samples.numpy(force=True)
+# print(f"{samples.shape=}")
 
-samples = samples.permute(0, 2, 3, 1)
-samples = samples.numpy(force=True)
-print(f"{samples.shape=}")
-
-samples = np.round(samples)
-samples = samples.astype(np.uint8)
-samples = samples[0]
-# samples = np.moveaxis(samples, [0, 1 ,2], [2, 1, ],)
-print(f"{samples.shape=}")
-cv2.imwrite("sample.png", samples)
+# samples = np.round(samples)
+# samples = samples.astype(np.uint8)
+# samples = samples[0]
+# # samples = np.moveaxis(samples, [0, 1 ,2], [2, 1, ],)
+# print(f"{samples.shape=}")
+# cv2.imwrite("sample.png", samples)
