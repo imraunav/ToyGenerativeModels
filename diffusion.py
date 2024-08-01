@@ -28,8 +28,8 @@ def cosinebetas(steps: int):
         t1 = i / steps
         t2 = (i + 1) / steps
         # clipping values at 0.009 worked better somehow, will have to investigate
-        betas.append(min(1 - alpha_cum(t2) / alpha_cum(t1), 0.999))
-    return torch.tensor(betas, dtype=torch.float32)
+        betas.append(1 - alpha_cum(t2) / alpha_cum(t1))
+    return torch.tensor(betas, dtype=torch.float32).clamp_max(0.9) # max of 0.999 make the pred mu very unstable
 
 
 def linearbetas(steps: int, beta_start: float = 0.0001, beta_end: float = 0.02):
@@ -53,12 +53,17 @@ def _totensor(x, broadcast_shape, device_tensor=None, device=None):
 class GaussianDiffusion:
     def __init__(
         self,
-        num_timesteps,
-        schedule_name="cosine",
-        use_posterior_variance=True,
+        num_timesteps: int,
+        skip_timesteps=1,
+        schedule_name: str = "cosine",
+        use_posterior_variance: bool = True,
+        clip_denoised: bool = True,
     ):
         self.num_timesteps = num_timesteps
+        self.skip_timesteps = skip_timesteps
+
         self.use_posterior_variance = use_posterior_variance
+        self.clip_denoised = clip_denoised
         if schedule_name == "cosine":
             self.betas = cosinebetas(num_timesteps)
         elif schedule_name == "linear":
@@ -113,9 +118,6 @@ class GaussianDiffusion:
     #     x_start =
     #     return x_start
 
-    def sample_timesteps(self, n):
-        return torch.randint(0, self.num_timesteps, (n,))
-
     def p_sample(self, x_t, t, model_pred, pertubation):
         """
         p(x_{t-1}|x_{t}, t)
@@ -158,7 +160,7 @@ class GaussianDiffusion:
             x_t = torch.randn(n, model.out_ch, h, w, device=device)
         else:
             x_t = x_t.to(device)
-        for t in reversed(range(self.num_timesteps)):
+        for t in reversed(range(1, self.num_timesteps, self.skip_timesteps)):
             # pertubation; refered to z in algorithm for sampling in Ho et al., 2020
             pertubation = 0
             if t > 1:
@@ -167,13 +169,15 @@ class GaussianDiffusion:
 
             model_pred = model(x_t, t)
             x_t = self.p_sample(x_t, t, model_pred, pertubation)
+            if self.clip_denoised:
+                x_t = x_t.clip(-1.0, 1.0)
         x_t = x_t.clip(-1.0, 1.0)
         return x_t
 
     def training_loss(self, model, x_start):
         device = next(model.parameters()).device
         n = x_start.shape[0]
-        t = self.sample_timesteps(n)
+        t = torch.randint(0, self.num_timesteps, (n,))
         # sanity check, also easy while debugging
         t = t.to(x_start.device)
         x_t, noise = self.q_sample(x_start, t)
@@ -195,5 +199,7 @@ class GaussianDiffusion:
 
 #     import matplotlib.pyplot as plt
 
-#     plt.plot(diff.betas)
+#     # plt.plot(diff.betas)
+#     plt.plot(diff.betas.clamp_max(0.02))
+
 #     plt.show()
