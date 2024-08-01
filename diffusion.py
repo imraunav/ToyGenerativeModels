@@ -29,7 +29,7 @@ def cosinebetas(steps: int):
         t2 = (i + 1) / steps
         # clipping values at 0.009 worked better somehow, will have to investigate
         betas.append(1 - alpha_cum(t2) / alpha_cum(t1))
-    return torch.tensor(betas, dtype=torch.float32).clamp_max(0.9) # max of 0.999 make the pred mu very unstable
+    return torch.tensor(betas, dtype=torch.float32).clamp_max(0.0999) # max of 0.999 make the pred mu very unstable
 
 
 def linearbetas(steps: int, beta_start: float = 0.0001, beta_end: float = 0.02):
@@ -54,8 +54,8 @@ class GaussianDiffusion:
     def __init__(
         self,
         num_timesteps: int,
-        skip_timesteps=1,
         schedule_name: str = "cosine",
+        skip_timesteps=1,
         use_posterior_variance: bool = True,
         clip_denoised: bool = True,
     ):
@@ -193,13 +193,26 @@ class GaussianDiffusion:
         return loss
 
 
-# if __name__ == "__main__":
-#     # debugging the scaling of the weights by the noise schedule
-#     diff = GaussianDiffusion(1000, "cosine")
+if __name__ == "__main__":
+    # debugging the scaling of the weights by the noise schedule
+    diff_cos = GaussianDiffusion(1000, "cosine")
+    diff_lin = GaussianDiffusion(1000, "linear")
 
-#     import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt
 
-#     # plt.plot(diff.betas)
-#     plt.plot(diff.betas.clamp_max(0.02))
+    plt.plot(diff_cos.betas)
+    plt.plot(diff_lin.betas)
+    plt.show()
 
-#     plt.show()
+    plt.plot(diff_cos.sqrt_alphas_cumprod)
+    plt.plot(diff_lin.sqrt_alphas_cumprod)
+    plt.show()
+
+    plt.plot(diff_lin.sqrt_one_minus_alphas_cumprod)
+    plt.plot(diff_cos.sqrt_one_minus_alphas_cumprod)
+    plt.show()
+
+    plt.plot(diff_cos.betas / diff_cos.sqrt_one_minus_alphas_cumprod)
+    plt.plot(diff_lin.betas / diff_lin.sqrt_one_minus_alphas_cumprod)
+    plt.show()
+

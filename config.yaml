@@ -15,10 +15,9 @@ model:
 
 diffusion:
   num_timesteps: 1000
-  skip_timesteps: 10
   schedule_name: cosine
   use_posterior_variance: False
-  clip_denoised: True
+  clip_denoised: False
 
 training:
   max_step: 200_000
