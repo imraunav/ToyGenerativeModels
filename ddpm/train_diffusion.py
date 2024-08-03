@@ -12,10 +12,17 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DistributedSampler, DataLoader
 from torchvision.transforms import Compose, ToTensor, Lambda
 from torchvision.utils import save_image, make_grid
+from argparse import ArgumentParser
 
-from diffusion import GaussianDiffusion
-from model import UnetDiffusion
-from dataset import ImageDataset, Resize, RandomVerticalFlip
+from ddpm.diffusion import GaussianDiffusion
+from ddpm.model import UnetDiffusion
+from ddpm.dataset import ImageDataset, Resize, RandomVerticalFlip
+
+parser = ArgumentParser()
+parser.add_argument(
+    "--config", type=str, required=True, help="Config yaml for the model configuration"
+)
+args = parser.parse_args()
 
 
 # Helper functions
@@ -106,7 +113,7 @@ def syncronize_params(m):
 
 # Instantiations and inits
 # -------------------------------------------------------------------------------------------------
-config = OmegaConf.load("./config.yaml")
+config = OmegaConf.load(args.config)
 
 # Karapthy : https://github.com/karpathy/build-nanogpt/blob/master/train_gpt2.py
 # simple launch:
@@ -233,6 +240,7 @@ forward_backward = partial(
 # -------------------------------------------------------------------------------------------------
 training_config = config["training"]
 max_step = training_config["max_step"]
+ckpt_file = config.get("checkpoint", "checkpoint.pt")
 train_loss = []
 for step in range(max_step):
     # check if this is the last step
@@ -291,7 +299,7 @@ for step in range(max_step):
                 "step": step,
                 "train_loss": train_loss,
             }
-            torch.save(checkpoint, "checkpoint.pt")
+            torch.save(checkpoint, ckpt_file)
 
 if ddp:
     dist.destroy_process_group()

@@ -1,6 +1,7 @@
 seed: 2568
 img_size: 128
 use_float16: True
+checkpoint: checkpoint_linear_128x128_256ch_mult_1_1_1_3_3_num_head_4_dropout_10_resblock_2_attn_ds_4_8_16.pt
 model:
   in_ch: 3
   out_ch: 3
@@ -17,7 +18,7 @@ diffusion:
   num_timesteps: 1000
   schedule_name: linear
   use_posterior_variance: False
-  clip_denoised: True
+  clip_denoised: False
 
 training:
   max_step: 200_000
