@@ -1,6 +1,6 @@
-# ToyGenerativeModels
-This repo tries to create simple generative models on toy datasets. 
+# GenerativeModels for Face generation
+Training on CelebA-HQ images to generate faces
+--- 
 
-Dataset : [50k Celeba Dataset 64x64](https://www.kaggle.com/datasets/therealcyberlord/50k-celeba-dataset-64x64?resource=download)
+- [DDPM](ddpm) - implementation of original [DDPM](https://arxiv.org/abs/2006.11239) with minor things taken from [IDDPM](https://arxiv.org/abs/2102.09672)
 
-> Maybe the `UNetDiffusion` is too ambitious 😅.
