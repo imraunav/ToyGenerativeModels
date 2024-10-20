@@ -55,10 +55,11 @@ class TimestepSequential(nn.Sequential, TimestepLayer):
 
 
 class ResBlock(TimestepLayer):
-    def __init__(self, in_ch, out_ch, time_emb_dim, dropout_p=0.3):
+    def __init__(self, in_ch, out_ch, time_emb_dim=None, dropout_p=0.3):
         super().__init__()
         self.in_ch = in_ch
         self.out_ch = out_ch
+        assert time_emb_dim is None or isinstance(time_emb_dim, int)
         self.time_emb_dim = time_emb_dim
 
         self.conv1 = nn.Sequential(
@@ -73,22 +74,27 @@ class ResBlock(TimestepLayer):
             _zero_init(nn.Conv2d(out_ch, out_ch, 3, 1, 1)),
         )
 
-        self.mlp = nn.Sequential(
-            normalization(time_emb_dim),
-            nn.SiLU(),
-            nn.Dropout(dropout_p),
-            nn.Linear(time_emb_dim, out_ch),
-        )
+        if time_emb_dim is not None:
+            self.mlp = nn.Sequential(
+                normalization(time_emb_dim),
+                nn.SiLU(),
+                nn.Dropout(dropout_p),
+                nn.Linear(time_emb_dim, out_ch),
+            )
         if in_ch != out_ch:
             self.residual = nn.Conv2d(in_ch, out_ch, 1)
         else:
             self.residual = nn.Identity()
 
     def forward(self, x, emb):
-        emb = self.mlp(emb)
         h = self.conv1(x)
-        emb = broadcast_tensor_op(emb, h.shape)
-        h = emb + h
+        if self.time_emb_dim is not None:
+            assert (
+                emb is not None
+            ), "Need embedding for module initialized with timestep_emb support"
+            emb = self.mlp(emb)
+            emb = broadcast_tensor_op(emb, h.shape)
+            h = emb + h
         h = self.conv2(h)
         x = self.residual(x)
         return h + x
